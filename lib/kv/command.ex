@@ -2,9 +2,36 @@ defmodule KV.Command do
   @doc """
   Runs the given command.
   """
-  def run(_command, socket) do
-    :gen_tcp.send(socket, "OK\r\n")
+  def run(command, socket)
+
+  def run({:create, bucket}, socket) do
+    KV.create_bucket(bucket)
+    :gen_tcp.send(socket, "OK\f\n")
     :ok
+  end
+
+  def run({:get, bucket, key}, socket) do
+    lookup(bucket, fn pid ->
+      value = KV.Bucket.get(pid, key)
+      :gen_tcp.send(socket, "#{value}\r\nOK\r\n")
+      :ok
+    end)
+  end
+
+  def run({:put, bucket, key, value}, socket) do
+    lookup(bucket, fn pid ->
+      KV.Bucket.put(pid, key, value)
+      :gen_tcp.send(socket, "OK\r\n")
+      :ok
+    end)
+  end
+
+  def run({:delete, bucket, key}, socket) do
+    lookup(bucket, fn pid ->
+      KV.Bucket.delete(pid, key)
+      :gen_tcp.send(socket, "OK\r\n")
+      :ok
+    end)
   end
 
   @doc ~S"""
@@ -45,6 +72,14 @@ defmodule KV.Command do
       ["PUT", bucket, key, value] -> {:ok, {:put, bucket, key, value}}
       ["DELETE", bucket, key] -> {:ok, {:delete, bucket, key}}
       _ -> {:error, :unknown_command}
+    end
+  end
+
+  defp lookup(bucket, callback) do
+    if bucket = KV.lookup_bucket(bucket) do
+      callback.(bucket)
+    else
+      {:error, :not_found}
     end
   end
 end
